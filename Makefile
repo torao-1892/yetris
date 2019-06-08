@@ -1,5 +1,5 @@
 # yetris Makefile
-# (2013) Alexandre Dantas <eu@alexdantas.net>
+# (2013-2014) Alexandre Dantas <eu@alexdantas.net>
 #
 # This is a rather complex Makefile, sorry about that.
 # It supports the following targets:
@@ -9,6 +9,7 @@
 # make install    Installs the package on your system
 # make uninstall  Uninstalls the package from your system
 # make clean      Cleans results of building process
+# make clean-all  Cleans everything (project files and libs)
 # make dist       Creates source code "tarball"
 # make doc        Generates the documentation with doxygen
 # make docclean   Removes the documentation
@@ -27,8 +28,10 @@
 #           (overwrites root)
 #  CFLAGS   Changes the C flags used on compilation
 #  CDEBUG   If you wish to build on debug mode, add 'CDEBUG=-g'
-#  PLATFORM To force a specific architecture, set it as
-#           'PLATFORM=-m32' or 'PLATFORM=-m64' for 32 or 64 bits.
+#  CFLAGS_PLATFORM
+#           User specified compiler flags
+#  LDFLAGS_PLATFORM
+#           User specified linker flags
 #
 
 # Uncomment line below to tun on verbose mode permanently
@@ -36,58 +39,55 @@
 
 # General Info
 PACKAGE = yetris
-VERSION = 2.1.0
+VERSION = 2.3.0
 DATE    = $(shell date "+%b%Y")
 
-# Local source code information
-FILES = BUGS ChangeLog COPYING Doxyfile \
-        INSTALL.md Makefile README.md TODO
-
 # Install dirs
-DESTDIR =
-PREFIX  = $(DESTDIR)/usr
-
+PREFIX      = /usr
 EXEC_PREFIX = $(PREFIX)
 DATAROOTDIR = $(PREFIX)/share
-MANROOT     = $(DATAROOTDIR)/man
+BINDIR      = $(EXEC_PREFIX)/bin
 
-MANNUMBER   = 6
+# Misc stuff
+PNGDIR     = $(DATAROOTDIR)/icons/hicolor
+XPMDIR     = $(DATAROOTDIR)/pixmaps
+DESKTOPDIR = $(DATAROOTDIR)/applications
 
-BINDIR      = $(EXEC_PREFIX)/games
-MANDIR      = $(MANROOT)/man$(MANNUMBER)
-
-MANFILE     = $(PACKAGE).$(MANNUMBER)
-MANPAGE     = doc/man/$(MANFILE)
+# Things for the man page
+MANROOT   = $(DATAROOTDIR)/man
+MANDIR    = $(MANROOT)/man$(MANNUMBER)
+MANNUMBER = 6
+MANFILE   = $(PACKAGE).$(MANNUMBER)
+MANPAGE   = doc/man/$(MANFILE)
 
 # Build info
 EXE         = $(PACKAGE)
-CDEBUG      = -O2
-PLATFORM    =
-CXXFLAGS    = $(CDEBUG) -Wall -Wextra -std=c++0x $(PLATFORM)
-LDFLAGS     = -lncurses $(PLATFORM)
+CDEBUG      =
+CXXFLAGS    = $(CDEBUG) -g -Wall -Wextra $(CFLAGS_PLATFORM)
+LDFLAGS     = -lncurses $(LDFLAGS_PLATFORM)
 INCLUDESDIR = -I"src/" -I"deps/"
 LIBSDIR     =
 
-# All source files
+# Project source files
 CFILES   = $(shell find src -type f -name '*.c')
 CXXFILES = $(shell find src -type f -name '*.cpp')
 OBJECTS  = $(CFILES:.c=.o) \
            $(CXXFILES:.cpp=.o)
 
+# Engine source files
+ENGINE_DIR     = deps/Engine
+ENGINE_FILES   = $(shell find $(ENGINE_DIR) -type f -name '*.cpp')
+ENGINE_OBJECTS = $(ENGINE_FILES:.cpp=.o)
+
+# Commander source files
+COMMANDER_DIR     = deps/commander
+COMMANDER_FILES   = $(shell find $(COMMANDER_DIR) -type f -name '*.c')
+COMMANDER_OBJECTS = $(COMMANDER_FILES:.c=.o)
+COMMANDER_CFLAGS  = -O2 -Wall -Wextra $(CFLAGS_PLATFORM)
+
 DEFINES = -DVERSION=\""$(VERSION)"\" \
           -DPACKAGE=\""$(PACKAGE)"\" \
           -DDATE=\""$(DATE)"\"
-
-# iniparser stuff
-INIDIR     = deps/iniparser
-INI_CFLAGS = -O2 -fPIC -Wall -ansi -pedantic -Wextra $(PLATFORM)
-INI_OBJS   = $(INIDIR)/dictionary.o \
-             $(INIDIR)/iniparser.o
-
-# commander stuff
-COMMANDERDIR = deps/commander
-COMMANDER_CFLAGS = -O2 -Wall -Wextra $(PLATFORM)
-COMMANDER_OBJS = $(COMMANDERDIR)/commander.o
 
 # Distribution tarball
 TARNAME = $(PACKAGE)
@@ -119,54 +119,66 @@ all: dirs $(EXE)
 
 install: all
 	# Installing...
-	$(MUTE)install -d -m 755 $(BINDIR)
-	$(MUTE)install -m 755 bin/$(EXE) $(BINDIR)
+	$(MUTE)install -pdm755 $(DESTDIR)$(BINDIR)
+	$(MUTE)install -pm755 bin/$(EXE) $(DESTDIR)$(BINDIR)
+
 	-$(MUTE)cat $(MANPAGE) | sed -e "s|DATE|$(DATE)|g" -e "s|VERSION|$(VERSION)|g" >$(MANFILE)
-	$(MUTE)install -d $(MANDIR)
-	$(MUTE)install $(MANFILE) $(MANDIR)
+	$(MUTE)install -pdm755 $(DESTDIR)$(MANDIR)
+	$(MUTE)install -pm644 $(MANFILE) $(DESTDIR)$(MANDIR)
 	$(MUTE)rm -f $(MANFILE)
+
 	# $(PACKAGE) successfuly installed!
 
 uninstall:
 	# Uninstalling...
-	$(MUTE)rm -f $(BINDIR)/$(EXE)
-	$(MUTE)rm -f $(MANDIR)/$(MANFILE)
+	$(MUTE)rm -f $(DESTDIR)$(BINDIR)/$(EXE)
+	$(MUTE)rm -f $(DESTDIR)$(MANDIR)/$(MANFILE)
 
-purge: uninstall
-	# Purging configuration files...
-	$(MUTE)rm -f $(MANDIR)/$(MANFILE)
-
-$(EXE): $(OBJECTS) $(INI_OBJS) $(COMMANDER_OBJS)
+$(EXE): $(OBJECTS) $(ENGINE_OBJECTS) $(COMMANDER_OBJECTS)
 	# Linking...
-	$(MUTE)$(CXX) $(OBJECTS) $(INI_OBJS) $(COMMANDER_OBJS) -o bin/$(EXE) $(LIBSDIR) $(LDFLAGS)
+	$(MUTE)$(CXX) $(OBJECTS) $(ENGINE_OBJECTS) $(COMMANDER_OBJECTS) -o bin/$(EXE) $(LIBSDIR) $(LDFLAGS)
 
 src/%.o: src/%.cpp
 	# Compiling $<...
 	$(MUTE)$(CXX) $(CXXFLAGS) $(CDEBUG) $< -c -o $@ $(DEFINES) $(INCLUDESDIR)
 
-dist: clean $(DISTDIR).tar.gz
+dist: clean-all $(DISTDIR).tar.gz
 
+# This creates a tarball with all the files
+# versioned by GIT.
 $(DISTDIR).tar.gz: $(DISTDIR)
 	$(MUTE)tar czf $(DISTDIR).tar.gz $(DISTDIR)
 	$(MUTE)rm -rf $(DISTDIR)
 	$(MUTE)cp $(DISTDIR).tar.gz ..
 	$(MUTE)rm -f $(DISTDIR).tar.gz
+	# Created ../$(DISTDIR).tar.gz!
 
+# This copies all the source code files into a
+# subdirectory called $(DISTDIR).
+#
+# It uses `git ls-files` to create the directory
+# tree and copy everything to their respective
+# places.
+#
 $(DISTDIR):
-	$(MUTE)mkdir -p $(DISTDIR)/src $(DISTDIR)/doc $(DISTDIR)/bin $(DISTDIR)/deps
-	-$(MUTE)cp $(FILES) -t $(DISTDIR)
-	-$(MUTE)cp -r src/*  $(DISTDIR)/src
-	-$(MUTE)cp -r doc/*  $(DISTDIR)/doc
-	-$(MUTE)cp -r deps/* $(DISTDIR)/deps
+	# Compressing source code...
+	$(MUTE)mkdir -p $(DISTDIR)
+	-$(MUTE)git ls-files | xargs -L 1 dirname | sed -e 's|^|$(DISTDIR)/|' | xargs -L 1 mkdir -p
+	-$(MUTE)git ls-files | sed -e 's|\(.*\)|\0 $(DISTDIR)/\0|' | xargs -L 1 cp
+	-$(MUTE)rm -f $(DISTDIR)/.gitignore
 
 run: all
 	# Running...
 	$(MUTE)./bin/$(EXE)
 
 clean:
-	# Cleaning files...
-	$(MUTE)rm $(VTAG) -f $(OBJECTS) $(INI_OBJS) $(COMMANDER_OBJS)
+	# Cleaning object files...
+	$(MUTE)rm $(VTAG) -f $(OBJECTS)
 	$(MUTE)rm $(VTAG) -f bin/$(EXE)
+
+clean-all: clean
+	# Cleaning dependency object files...
+	$(MUTE)rm $(VTAG) -f $(ENGINE_OBJECTS) $(COMMANDER_OBJECTS)
 
 dirs:
 	$(MUTE)mkdir -p bin
@@ -181,20 +193,13 @@ docclean:
 
 .PHONY: clean dirs doc docclean uninstall
 
-# iniparser stuff
-
-$(INIDIR)/dictionary.o: $(INIDIR)/dictionary.c
+# Engine stuff
+$(ENGINE_DIR)/%.o: $(ENGINE_DIR)/%.cpp
 	# Compiling $<...
-	$(MUTE)$(CC) $(INI_CFLAGS) $< -c -o $@
+	$(MUTE)$(CXX) $(CXXFLAGS) $(CDEBUG) $< -c -o $@ $(DEFINES) $(INCLUDESDIR)
 
-$(INIDIR)/iniparser.o: $(INIDIR)/iniparser.c
-	# Compiling $<...
-	$(MUTE)$(CC) $(INI_CFLAGS) $< -c -o $@
-
-# commander stuf
-
-$(COMMANDERDIR)/commander.o: $(COMMANDERDIR)/commander.c
+# Commander stuff
+$(COMMANDER_DIR)/%.o: $(COMMANDER_DIR)/%.c
 	# Compiling $<...
 	$(MUTE)$(CC) $(COMMANDER_CFLAGS) $< -c -o $@
-
 
